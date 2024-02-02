@@ -1,0 +1,1060 @@
+5, b * 255];
+};
+
+convert.cmyk.rgb = function (cmyk) {
+	var c = cmyk[0] / 100;
+	var m = cmyk[1] / 100;
+	var y = cmyk[2] / 100;
+	var k = cmyk[3] / 100;
+	var r;
+	var g;
+	var b;
+
+	r = 1 - Math.min(1, c * (1 - k) + k);
+	g = 1 - Math.min(1, m * (1 - k) + k);
+	b = 1 - Math.min(1, y * (1 - k) + k);
+
+	return [r * 255, g * 255, b * 255];
+};
+
+convert.xyz.rgb = function (xyz) {
+	var x = xyz[0] / 100;
+	var y = xyz[1] / 100;
+	var z = xyz[2] / 100;
+	var r;
+	var g;
+	var b;
+
+	r = (x * 3.2406) + (y * -1.5372) + (z * -0.4986);
+	g = (x * -0.9689) + (y * 1.8758) + (z * 0.0415);
+	b = (x * 0.0557) + (y * -0.2040) + (z * 1.0570);
+
+	// assume sRGB
+	r = r > 0.0031308
+		? ((1.055 * Math.pow(r, 1.0 / 2.4)) - 0.055)
+		: r * 12.92;
+
+	g = g > 0.0031308
+		? ((1.055 * Math.pow(g, 1.0 / 2.4)) - 0.055)
+		: g * 12.92;
+
+	b = b > 0.0031308
+		? ((1.055 * Math.pow(b, 1.0 / 2.4)) - 0.055)
+		: b * 12.92;
+
+	r = Math.min(Math.max(0, r), 1);
+	g = Math.min(Math.max(0, g), 1);
+	b = Math.min(Math.max(0, b), 1);
+
+	return [r * 255, g * 255, b * 255];
+};
+
+convert.xyz.lab = function (xyz) {
+	var x = xyz[0];
+	var y = xyz[1];
+	var z = xyz[2];
+	var l;
+	var a;
+	var b;
+
+	x /= 95.047;
+	y /= 100;
+	z /= 108.883;
+
+	x = x > 0.008856 ? Math.pow(x, 1 / 3) : (7.787 * x) + (16 / 116);
+	y = y > 0.008856 ? Math.pow(y, 1 / 3) : (7.787 * y) + (16 / 116);
+	z = z > 0.008856 ? Math.pow(z, 1 / 3) : (7.787 * z) + (16 / 116);
+
+	l = (116 * y) - 16;
+	a = 500 * (x - y);
+	b = 200 * (y - z);
+
+	return [l, a, b];
+};
+
+convert.lab.xyz = function (lab) {
+	var l = lab[0];
+	var a = lab[1];
+	var b = lab[2];
+	var x;
+	var y;
+	var z;
+
+	y = (l + 16) / 116;
+	x = a / 500 + y;
+	z = y - b / 200;
+
+	var y2 = Math.pow(y, 3);
+	var x2 = Math.pow(x, 3);
+	var z2 = Math.pow(z, 3);
+	y = y2 > 0.008856 ? y2 : (y - 16 / 116) / 7.787;
+	x = x2 > 0.008856 ? x2 : (x - 16 / 116) / 7.787;
+	z = z2 > 0.008856 ? z2 : (z - 16 / 116) / 7.787;
+
+	x *= 95.047;
+	y *= 100;
+	z *= 108.883;
+
+	return [x, y, z];
+};
+
+convert.lab.lch = function (lab) {
+	var l = lab[0];
+	var a = lab[1];
+	var b = lab[2];
+	var hr;
+	var h;
+	var c;
+
+	hr = Math.atan2(b, a);
+	h = hr * 360 / 2 / Math.PI;
+
+	if (h < 0) {
+		h += 360;
+	}
+
+	c = Math.sqrt(a * a + b * b);
+
+	return [l, c, h];
+};
+
+convert.lch.lab = function (lch) {
+	var l = lch[0];
+	var c = lch[1];
+	var h = lch[2];
+	var a;
+	var b;
+	var hr;
+
+	hr = h / 360 * 2 * Math.PI;
+	a = c * Math.cos(hr);
+	b = c * Math.sin(hr);
+
+	return [l, a, b];
+};
+
+convert.rgb.ansi16 = function (args) {
+	var r = args[0];
+	var g = args[1];
+	var b = args[2];
+	var value = 1 in arguments ? arguments[1] : convert.rgb.hsv(args)[2]; // hsv -> ansi16 optimization
+
+	value = Math.round(value / 50);
+
+	if (value === 0) {
+		return 30;
+	}
+
+	var ansi = 30
+		+ ((Math.round(b / 255) << 2)
+		| (Math.round(g / 255) << 1)
+		| Math.round(r / 255));
+
+	if (value === 2) {
+		ansi += 60;
+	}
+
+	return ansi;
+};
+
+convert.hsv.ansi16 = function (args) {
+	// optimization here; we already know the value and don't need to get
+	// it converted for us.
+	return convert.rgb.ansi16(convert.hsv.rgb(args), args[2]);
+};
+
+convert.rgb.ansi256 = function (args) {
+	var r = args[0];
+	var g = args[1];
+	var b = args[2];
+
+	// we use the extended greyscale palette here, with the exception of
+	// black and white. normal palette only has 4 greyscale shades.
+	if (r === g && g === b) {
+		if (r < 8) {
+			return 16;
+		}
+
+		if (r > 248) {
+			return 231;
+		}
+
+		return Math.round(((r - 8) / 247) * 24) + 232;
+	}
+
+	var ansi = 16
+		+ (36 * Math.round(r / 255 * 5))
+		+ (6 * Math.round(g / 255 * 5))
+		+ Math.round(b / 255 * 5);
+
+	return ansi;
+};
+
+convert.ansi16.rgb = function (args) {
+	var color = args % 10;
+
+	// handle greyscale
+	if (color === 0 || color === 7) {
+		if (args > 50) {
+			color += 3.5;
+		}
+
+		color = color / 10.5 * 255;
+
+		return [color, color, color];
+	}
+
+	var mult = (~~(args > 50) + 1) * 0.5;
+	var r = ((color & 1) * mult) * 255;
+	var g = (((color >> 1) & 1) * mult) * 255;
+	var b = (((color >> 2) & 1) * mult) * 255;
+
+	return [r, g, b];
+};
+
+convert.ansi256.rgb = function (args) {
+	// handle greyscale
+	if (args >= 232) {
+		var c = (args - 232) * 10 + 8;
+		return [c, c, c];
+	}
+
+	args -= 16;
+
+	var rem;
+	var r = Math.floor(args / 36) / 5 * 255;
+	var g = Math.floor((rem = args % 36) / 6) / 5 * 255;
+	var b = (rem % 6) / 5 * 255;
+
+	return [r, g, b];
+};
+
+convert.rgb.hex = function (args) {
+	var integer = ((Math.round(args[0]) & 0xFF) << 16)
+		+ ((Math.round(args[1]) & 0xFF) << 8)
+		+ (Math.round(args[2]) & 0xFF);
+
+	var string = integer.toString(16).toUpperCase();
+	return '000000'.substring(string.length) + string;
+};
+
+convert.hex.rgb = function (args) {
+	var match = args.toString(16).match(/[a-f0-9]{6}|[a-f0-9]{3}/i);
+	if (!match) {
+		return [0, 0, 0];
+	}
+
+	var colorString = match[0];
+
+	if (match[0].length === 3) {
+		colorString = colorString.split('').map(function (char) {
+			return char + char;
+		}).join('');
+	}
+
+	var integer = parseInt(colorString, 16);
+	var r = (integer >> 16) & 0xFF;
+	var g = (integer >> 8) & 0xFF;
+	var b = integer & 0xFF;
+
+	return [r, g, b];
+};
+
+convert.rgb.hcg = function (rgb) {
+	var r = rgb[0] / 255;
+	var g = rgb[1] / 255;
+	var b = rgb[2] / 255;
+	var max = Math.max(Math.max(r, g), b);
+	var min = Math.min(Math.min(r, g), b);
+	var chroma = (max - min);
+	var grayscale;
+	var hue;
+
+	if (chroma < 1) {
+		grayscale = min / (1 - chroma);
+	} else {
+		grayscale = 0;
+	}
+
+	if (chroma <= 0) {
+		hue = 0;
+	} else
+	if (max === r) {
+		hue = ((g - b) / chroma) % 6;
+	} else
+	if (max === g) {
+		hue = 2 + (b - r) / chroma;
+	} else {
+		hue = 4 + (r - g) / chroma + 4;
+	}
+
+	hue /= 6;
+	hue %= 1;
+
+	return [hue * 360, chroma * 100, grayscale * 100];
+};
+
+convert.hsl.hcg = function (hsl) {
+	var s = hsl[1] / 100;
+	var l = hsl[2] / 100;
+	var c = 1;
+	var f = 0;
+
+	if (l < 0.5) {
+		c = 2.0 * s * l;
+	} else {
+		c = 2.0 * s * (1.0 - l);
+	}
+
+	if (c < 1.0) {
+		f = (l - 0.5 * c) / (1.0 - c);
+	}
+
+	return [hsl[0], c * 100, f * 100];
+};
+
+convert.hsv.hcg = function (hsv) {
+	var s = hsv[1] / 100;
+	var v = hsv[2] / 100;
+
+	var c = s * v;
+	var f = 0;
+
+	if (c < 1.0) {
+		f = (v - c) / (1 - c);
+	}
+
+	return [hsv[0], c * 100, f * 100];
+};
+
+convert.hcg.rgb = function (hcg) {
+	var h = hcg[0] / 360;
+	var c = hcg[1] / 100;
+	var g = hcg[2] / 100;
+
+	if (c === 0.0) {
+		return [g * 255, g * 255, g * 255];
+	}
+
+	var pure = [0, 0, 0];
+	var hi = (h % 1) * 6;
+	var v = hi % 1;
+	var w = 1 - v;
+	var mg = 0;
+
+	switch (Math.floor(hi)) {
+		case 0:
+			pure[0] = 1; pure[1] = v; pure[2] = 0; break;
+		case 1:
+			pure[0] = w; pure[1] = 1; pure[2] = 0; break;
+		case 2:
+			pure[0] = 0; pure[1] = 1; pure[2] = v; break;
+		case 3:
+			pure[0] = 0; pure[1] = w; pure[2] = 1; break;
+		case 4:
+			pure[0] = v; pure[1] = 0; pure[2] = 1; break;
+		default:
+			pure[0] = 1; pure[1] = 0; pure[2] = w;
+	}
+
+	mg = (1.0 - c) * g;
+
+	return [
+		(c * pure[0] + mg) * 255,
+		(c * pure[1] + mg) * 255,
+		(c * pure[2] + mg) * 255
+	];
+};
+
+convert.hcg.hsv = function (hcg) {
+	var c = hcg[1] / 100;
+	var g = hcg[2] / 100;
+
+	var v = c + g * (1.0 - c);
+	var f = 0;
+
+	if (v > 0.0) {
+		f = c / v;
+	}
+
+	return [hcg[0], f * 100, v * 100];
+};
+
+convert.hcg.hsl = function (hcg) {
+	var c = hcg[1] / 100;
+	var g = hcg[2] / 100;
+
+	var l = g * (1.0 - c) + 0.5 * c;
+	var s = 0;
+
+	if (l > 0.0 && l < 0.5) {
+		s = c / (2 * l);
+	} else
+	if (l >= 0.5 && l < 1.0) {
+		s = c / (2 * (1 - l));
+	}
+
+	return [hcg[0], s * 100, l * 100];
+};
+
+convert.hcg.hwb = function (hcg) {
+	var c = hcg[1] / 100;
+	var g = hcg[2] / 100;
+	var v = c + g * (1.0 - c);
+	return [hcg[0], (v - c) * 100, (1 - v) * 100];
+};
+
+convert.hwb.hcg = function (hwb) {
+	var w = hwb[1] / 100;
+	var b = hwb[2] / 100;
+	var v = 1 - b;
+	var c = v - w;
+	var g = 0;
+
+	if (c < 1) {
+		g = (v - c) / (1 - c);
+	}
+
+	return [hwb[0], c * 100, g * 100];
+};
+
+convert.apple.rgb = function (apple) {
+	return [(apple[0] / 65535) * 255, (apple[1] / 65535) * 255, (apple[2] / 65535) * 255];
+};
+
+convert.rgb.apple = function (rgb) {
+	return [(rgb[0] / 255) * 65535, (rgb[1] / 255) * 65535, (rgb[2] / 255) * 65535];
+};
+
+convert.gray.rgb = function (args) {
+	return [args[0] / 100 * 255, args[0] / 100 * 255, args[0] / 100 * 255];
+};
+
+convert.gray.hsl = convert.gray.hsv = function (args) {
+	return [0, 0, args[0]];
+};
+
+convert.gray.hwb = function (gray) {
+	return [0, 100, gray[0]];
+};
+
+convert.gray.cmyk = function (gray) {
+	return [0, 0, 0, gray[0]];
+};
+
+convert.gray.lab = function (gray) {
+	return [gray[0], 0, 0];
+};
+
+convert.gray.hex = function (gray) {
+	var val = Math.round(gray[0] / 100 * 255) & 0xFF;
+	var integer = (val << 16) + (val << 8) + val;
+
+	var string = integer.toString(16).toUpperCase();
+	return '000000'.substring(string.length) + string;
+};
+
+convert.rgb.gray = function (rgb) {
+	var val = (rgb[0] + rgb[1] + rgb[2]) / 3;
+	return [val / 255 * 100];
+};
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              'use strict';
+
+var test = require('tape');
+var qs = require('../');
+var utils = require('../lib/utils');
+var iconv = require('iconv-lite');
+var SaferBuffer = require('safer-buffer').Buffer;
+
+test('parse()', function (t) {
+    t.test('parses a simple string', function (st) {
+        st.deepEqual(qs.parse('0=foo'), { 0: 'foo' });
+        st.deepEqual(qs.parse('foo=c++'), { foo: 'c  ' });
+        st.deepEqual(qs.parse('a[>=]=23'), { a: { '>=': '23' } });
+        st.deepEqual(qs.parse('a[<=>]==23'), { a: { '<=>': '=23' } });
+        st.deepEqual(qs.parse('a[==]=23'), { a: { '==': '23' } });
+        st.deepEqual(qs.parse('foo', { strictNullHandling: true }), { foo: null });
+        st.deepEqual(qs.parse('foo'), { foo: '' });
+        st.deepEqual(qs.parse('foo='), { foo: '' });
+        st.deepEqual(qs.parse('foo=bar'), { foo: 'bar' });
+        st.deepEqual(qs.parse(' foo = bar = baz '), { ' foo ': ' bar = baz ' });
+        st.deepEqual(qs.parse('foo=bar=baz'), { foo: 'bar=baz' });
+        st.deepEqual(qs.parse('foo=bar&bar=baz'), { foo: 'bar', bar: 'baz' });
+        st.deepEqual(qs.parse('foo2=bar2&baz2='), { foo2: 'bar2', baz2: '' });
+        st.deepEqual(qs.parse('foo=bar&baz', { strictNullHandling: true }), { foo: 'bar', baz: null });
+        st.deepEqual(qs.parse('foo=bar&baz'), { foo: 'bar', baz: '' });
+        st.deepEqual(qs.parse('cht=p3&chd=t:60,40&chs=250x100&chl=Hello|World'), {
+            cht: 'p3',
+            chd: 't:60,40',
+            chs: '250x100',
+            chl: 'Hello|World'
+        });
+        st.end();
+    });
+
+    t.test('allows enabling dot notation', function (st) {
+        st.deepEqual(qs.parse('a.b=c'), { 'a.b': 'c' });
+        st.deepEqual(qs.parse('a.b=c', { allowDots: true }), { a: { b: 'c' } });
+        st.end();
+    });
+
+    t.deepEqual(qs.parse('a[b]=c'), { a: { b: 'c' } }, 'parses a single nested string');
+    t.deepEqual(qs.parse('a[b][c]=d'), { a: { b: { c: 'd' } } }, 'parses a double nested string');
+    t.deepEqual(
+        qs.parse('a[b][c][d][e][f][g][h]=i'),
+        { a: { b: { c: { d: { e: { f: { '[g][h]': 'i' } } } } } } },
+        'defaults to a depth of 5'
+    );
+
+    t.test('only parses one level when depth = 1', function (st) {
+        st.deepEqual(qs.parse('a[b][c]=d', { depth: 1 }), { a: { b: { '[c]': 'd' } } });
+        st.deepEqual(qs.parse('a[b][c][d]=e', { depth: 1 }), { a: { b: { '[c][d]': 'e' } } });
+        st.end();
+    });
+
+    t.deepEqual(qs.parse('a=b&a=c'), { a: ['b', 'c'] }, 'parses a simple array');
+
+    t.test('parses an explicit array', function (st) {
+        st.deepEqual(qs.parse('a[]=b'), { a: ['b'] });
+        st.deepEqual(qs.parse('a[]=b&a[]=c'), { a: ['b', 'c'] });
+        st.deepEqual(qs.parse('a[]=b&a[]=c&a[]=d'), { a: ['b', 'c', 'd'] });
+        st.end();
+    });
+
+    t.test('parses a mix of simple and explicit arrays', function (st) {
+        st.deepEqual(qs.parse('a=b&a[]=c'), { a: ['b', 'c'] });
+        st.deepEqual(qs.parse('a[]=b&a=c'), { a: ['b', 'c'] });
+        st.deepEqual(qs.parse('a[0]=b&a=c'), { a: ['b', 'c'] });
+        st.deepEqual(qs.parse('a=b&a[0]=c'), { a: ['b', 'c'] });
+
+        st.deepEqual(qs.parse('a[1]=b&a=c', { arrayLimit: 20 }), { a: ['b', 'c'] });
+        st.deepEqual(qs.parse('a[]=b&a=c', { arrayLimit: 0 }), { a: ['b', 'c'] });
+        st.deepEqual(qs.parse('a[]=b&a=c'), { a: ['b', 'c'] });
+
+        st.deepEqual(qs.parse('a=b&a[1]=c', { arrayLimit: 20 }), { a: ['b', 'c'] });
+        st.deepEqual(qs.parse('a=b&a[]=c', { arrayLimit: 0 }), { a: ['b', 'c'] });
+        st.deepEqual(qs.parse('a=b&a[]=c'), { a: ['b', 'c'] });
+
+        st.end();
+    });
+
+    t.test('parses a nested array', function (st) {
+        st.deepEqual(qs.parse('a[b][]=c&a[b][]=d'), { a: { b: ['c', 'd'] } });
+        st.deepEqual(qs.parse('a[>=]=25'), { a: { '>=': '25' } });
+        st.end();
+    });
+
+    t.test('allows to specify array indices', function (st) {
+        st.deepEqual(qs.parse('a[1]=c&a[0]=b&a[2]=d'), { a: ['b', 'c', 'd'] });
+        st.deepEqual(qs.parse('a[1]=c&a[0]=b'), { a: ['b', 'c'] });
+        st.deepEqual(qs.parse('a[1]=c', { arrayLimit: 20 }), { a: ['c'] });
+        st.deepEqual(qs.parse('a[1]=c', { arrayLimit: 0 }), { a: { 1: 'c' } });
+        st.deepEqual(qs.parse('a[1]=c'), { a: ['c'] });
+        st.end();
+    });
+
+    t.test('limits specific array indices to arrayLimit', function (st) {
+        st.deepEqual(qs.parse('a[20]=a', { arrayLimit: 20 }), { a: ['a'] });
+        st.deepEqual(qs.parse('a[21]=a', { arrayLimit: 20 }), { a: { 21: 'a' } });
+        st.end();
+    });
+
+    t.deepEqual(qs.parse('a[12b]=c'), { a: { '12b': 'c' } }, 'supports keys that begin with a number');
+
+    t.test('supports encoded = signs', function (st) {
+        st.deepEqual(qs.parse('he%3Dllo=th%3Dere'), { 'he=llo': 'th=ere' });
+        st.end();
+    });
+
+    t.test('is ok with url encoded strings', function (st) {
+        st.deepEqual(qs.parse('a[b%20c]=d'), { a: { 'b c': 'd' } });
+        st.deepEqual(qs.parse('a[b]=c%20d'), { a: { b: 'c d' } });
+        st.end();
+    });
+
+    t.test('allows brackets in the value', function (st) {
+        st.deepEqual(qs.parse('pets=["tobi"]'), { pets: '["tobi"]' });
+        st.deepEqual(qs.parse('operators=[">=", "<="]'), { operators: '[">=", "<="]' });
+        st.end();
+    });
+
+    t.test('allows empty values', function (st) {
+        st.deepEqual(qs.parse(''), {});
+        st.deepEqual(qs.parse(null), {});
+        st.deepEqual(qs.parse(undefined), {});
+        st.end();
+    });
+
+    t.test('transforms arrays to objects', function (st) {
+        st.deepEqual(qs.parse('foo[0]=bar&foo[bad]=baz'), { foo: { 0: 'bar', bad: 'baz' } });
+        st.deepEqual(qs.parse('foo[bad]=baz&foo[0]=bar'), { foo: { bad: 'baz', 0: 'bar' } });
+        st.deepEqual(qs.parse('foo[bad]=baz&foo[]=bar'), { foo: { bad: 'baz', 0: 'bar' } });
+        st.deepEqual(qs.parse('foo[]=bar&foo[bad]=baz'), { foo: { 0: 'bar', bad: 'baz' } });
+        st.deepEqual(qs.parse('foo[bad]=baz&foo[]=bar&foo[]=foo'), { foo: { bad: 'baz', 0: 'bar', 1: 'foo' } });
+        st.deepEqual(qs.parse('foo[0][a]=a&foo[0][b]=b&foo[1][a]=aa&foo[1][b]=bb'), { foo: [{ a: 'a', b: 'b' }, { a: 'aa', b: 'bb' }] });
+
+        st.deepEqual(qs.parse('a[]=b&a[t]=u&a[hasOwnProperty]=c', { allowPrototypes: false }), { a: { 0: 'b', t: 'u' } });
+        st.deepEqual(qs.parse('a[]=b&a[t]=u&a[hasOwnProperty]=c', { allowPrototypes: true }), { a: { 0: 'b', t: 'u', hasOwnProperty: 'c' } });
+        st.deepEqual(qs.parse('a[]=b&a[hasOwnProperty]=c&a[x]=y', { allowPrototypes: false }), { a: { 0: 'b', x: 'y' } });
+        st.deepEqual(qs.parse('a[]=b&a[hasOwnProperty]=c&a[x]=y', { allowPrototypes: true }), { a: { 0: 'b', hasOwnProperty: 'c', x: 'y' } });
+        st.end();
+    });
+
+    t.test('transforms arrays to objects (dot notation)', function (st) {
+        st.deepEqual(qs.parse('foo[0].baz=bar&fool.bad=baz', { allowDots: true }), { foo: [{ baz: 'bar' }], fool: { bad: 'baz' } });
+        st.deepEqual(qs.parse('foo[0].baz=bar&fool.bad.boo=baz', { allowDots: true }), { foo: [{ baz: 'bar' }], fool: { bad: { boo: 'baz' } } });
+        st.deepEqual(qs.parse('foo[0][0].baz=bar&fool.bad=baz', { allowDots: true }), { foo: [[{ baz: 'bar' }]], fool: { bad: 'baz' } });
+        st.deepEqual(qs.parse('foo[0].baz[0]=15&foo[0].bar=2', { allowDots: true }), { foo: [{ baz: ['15'], bar: '2' }] });
+        st.deepEqual(qs.parse('foo[0].baz[0]=15&foo[0].baz[1]=16&foo[0].bar=2', { allowDots: true }), { foo: [{ baz: ['15', '16'], bar: '2' }] });
+        st.deepEqual(qs.parse('foo.bad=baz&foo[0]=bar', { allowDots: true }), { foo: { bad: 'baz', 0: 'bar' } });
+        st.deepEqual(qs.parse('foo.bad=baz&foo[]=bar', { allowDots: true }), { foo: { bad: 'baz', 0: 'bar' } });
+        st.deepEqual(qs.parse('foo[]=bar&foo.bad=baz', { allowDots: true }), { foo: { 0: 'bar', bad: 'baz' } });
+        st.deepEqual(qs.parse('foo.bad=baz&foo[]=bar&foo[]=foo', { allowDots: true }), { foo: { bad: 'baz', 0: 'bar', 1: 'foo' } });
+        st.deepEqual(qs.parse('foo[0].a=a&foo[0].b=b&foo[1].a=aa&foo[1].b=bb', { allowDots: true }), { foo: [{ a: 'a', b: 'b' }, { a: 'aa', b: 'bb' }] });
+        st.end();
+    });
+
+    t.test('correctly prunes undefined values when converting an array to an object', function (st) {
+        st.deepEqual(qs.parse('a[2]=b&a[99999999]=c'), { a: { 2: 'b', 99999999: 'c' } });
+        st.end();
+    });
+
+    t.test('supports malformed uri characters', function (st) {
+        st.deepEqual(qs.parse('{%:%}', { strictNullHandling: true }), { '{%:%}': null });
+        st.deepEqual(qs.parse('{%:%}='), { '{%:%}': '' });
+        st.deepEqual(qs.parse('foo=%:%}'), { foo: '%:%}' });
+        st.end();
+    });
+
+    t.test('doesn\'t produce empty keys', function (st) {
+        st.deepEqual(qs.parse('_r=1&'), { _r: '1' });
+        st.end();
+    });
+
+    t.test('cannot access Object prototype', function (st) {
+        qs.parse('constructor[prototype][bad]=bad');
+        qs.parse('bad[constructor][prototype][bad]=bad');
+        st.equal(typeof Object.prototype.bad, 'undefined');
+        st.end();
+    });
+
+    t.test('parses arrays of objects', function (st) {
+        st.deepEqual(qs.parse('a[][b]=c'), { a: [{ b: 'c' }] });
+        st.deepEqual(qs.parse('a[0][b]=c'), { a: [{ b: 'c' }] });
+        st.end();
+    });
+
+    t.test('allows for empty strings in arrays', function (st) {
+        st.deepEqual(qs.parse('a[]=b&a[]=&a[]=c'), { a: ['b', '', 'c'] });
+
+        st.deepEqual(
+            qs.parse('a[0]=b&a[1]&a[2]=c&a[19]=', { strictNullHandling: true, arrayLimit: 20 }),
+            { a: ['b', null, 'c', ''] },
+            'with arrayLimit 20 + array indices: null then empty string works'
+        );
+        st.deepEqual(
+            qs.parse('a[]=b&a[]&a[]=c&a[]=', { strictNullHandling: true, arrayLimit: 0 }),
+            { a: ['b', null, 'c', ''] },
+            'with arrayLimit 0 + array brackets: null then empty string works'
+        );
+
+        st.deepEqual(
+            qs.parse('a[0]=b&a[1]=&a[2]=c&a[19]', { strictNullHandling: true, arrayLimit: 20 }),
+            { a: ['b', '', 'c', null] },
+            'with arrayLimit 20 + array indices: empty string then null works'
+        );
+        st.deepEqual(
+            qs.parse('a[]=b&a[]=&a[]=c&a[]', { strictNullHandling: true, arrayLimit: 0 }),
+            { a: ['b', '', 'c', null] },
+            'with arrayLimit 0 + array brackets: empty string then null works'
+        );
+
+        st.deepEqual(
+            qs.parse('a[]=&a[]=b&a[]=c'),
+            { a: ['', 'b', 'c'] },
+            'array brackets: empty strings work'
+        );
+        st.end();
+    });
+
+    t.test('compacts sparse arrays', function (st) {
+        st.deepEqual(qs.parse('a[10]=1&a[2]=2', { arrayLimit: 20 }), { a: ['2', '1'] });
+        st.deepEqual(qs.parse('a[1][b][2][c]=1', { arrayLimit: 20 }), { a: [{ b: [{ c: '1' }] }] });
+        st.deepEqual(qs.parse('a[1][2][3][c]=1', { arrayLimit: 20 }), { a: [[[{ c: '1' }]]] });
+        st.deepEqual(qs.parse('a[1][2][3][c][1]=1', { arrayLimit: 20 }), { a: [[[{ c: ['1'] }]]] });
+        st.end();
+    });
+
+    t.test('parses semi-parsed strings', function (st) {
+        st.deepEqual(qs.parse({ 'a[b]': 'c' }), { a: { b: 'c' } });
+        st.deepEqual(qs.parse({ 'a[b]': 'c', 'a[d]': 'e' }), { a: { b: 'c', d: 'e' } });
+        st.end();
+    });
+
+    t.test('parses buffers correctly', function (st) {
+        var b = SaferBuffer.from('test');
+        st.deepEqual(qs.parse({ a: b }), { a: b });
+        st.end();
+    });
+
+    t.test('parses jquery-param strings', function (st) {
+        // readable = 'filter[0][]=int1&filter[0][]==&filter[0][]=77&filter[]=and&filter[2][]=int2&filter[2][]==&filter[2][]=8'
+        var encoded = 'filter%5B0%5D%5B%5D=int1&filter%5B0%5D%5B%5D=%3D&filter%5B0%5D%5B%5D=77&filter%5B%5D=and&filter%5B2%5D%5B%5D=int2&filter%5B2%5D%5B%5D=%3D&filter%5B2%5D%5B%5D=8';
+        var expected = { filter: [['int1', '=', '77'], 'and', ['int2', '=', '8']] };
+        st.deepEqual(qs.parse(encoded), expected);
+        st.end();
+    });
+
+    t.test('continues parsing when no parent is found', function (st) {
+        st.deepEqual(qs.parse('[]=&a=b'), { 0: '', a: 'b' });
+        st.deepEqual(qs.parse('[]&a=b', { strictNullHandling: true }), { 0: null, a: 'b' });
+        st.deepEqual(qs.parse('[foo]=bar'), { foo: 'bar' });
+        st.end();
+    });
+
+    t.test('does not error when parsing a very long array', function (st) {
+        var str = 'a[]=a';
+        while (Buffer.byteLength(str) < 128 * 1024) {
+            str = str + '&' + str;
+        }
+
+        st.doesNotThrow(function () {
+            qs.parse(str);
+        });
+
+        st.end();
+    });
+
+    t.test('should not throw when a native prototype has an enumerable property', function (st) {
+        Object.prototype.crash = '';
+        Array.prototype.crash = '';
+        st.doesNotThrow(qs.parse.bind(null, 'a=b'));
+        st.deepEqual(qs.parse('a=b'), { a: 'b' });
+        st.doesNotThrow(qs.parse.bind(null, 'a[][b]=c'));
+        st.deepEqual(qs.parse('a[][b]=c'), { a: [{ b: 'c' }] });
+        delete Object.prototype.crash;
+        delete Array.prototype.crash;
+        st.end();
+    });
+
+    t.test('parses a string with an alternative string delimiter', function (st) {
+        st.deepEqual(qs.parse('a=b;c=d', { delimiter: ';' }), { a: 'b', c: 'd' });
+        st.end();
+    });
+
+    t.test('parses a string with an alternative RegExp delimiter', function (st) {
+        st.deepEqual(qs.parse('a=b; c=d', { delimiter: /[;,] */ }), { a: 'b', c: 'd' });
+        st.end();
+    });
+
+    t.test('does not use non-splittable objects as delimiters', function (st) {
+        st.deepEqual(qs.parse('a=b&c=d', { delimiter: true }), { a: 'b', c: 'd' });
+        st.end();
+    });
+
+    t.test('allows overriding parameter limit', function (st) {
+        st.deepEqual(qs.parse('a=b&c=d', { parameterLimit: 1 }), { a: 'b' });
+        st.end();
+    });
+
+    t.test('allows setting the parameter limit to Infinity', function (st) {
+        st.deepEqual(qs.parse('a=b&c=d', { parameterLimit: Infinity }), { a: 'b', c: 'd' });
+        st.end();
+    });
+
+    t.test('allows overriding array limit', function (st) {
+        st.deepEqual(qs.parse('a[0]=b', { arrayLimit: -1 }), { a: { 0: 'b' } });
+        st.deepEqual(qs.parse('a[-1]=b', { arrayLimit: -1 }), { a: { '-1': 'b' } });
+        st.deepEqual(qs.parse('a[0]=b&a[1]=c', { arrayLimit: 0 }), { a: { 0: 'b', 1: 'c' } });
+        st.end();
+    });
+
+    t.test('allows disabling array parsing', function (st) {
+        var indices = qs.parse('a[0]=b&a[1]=c', { parseArrays: false });
+        st.deepEqual(indices, { a: { 0: 'b', 1: 'c' } });
+        st.equal(Array.isArray(indices.a), false, 'parseArrays:false, indices case is not an array');
+
+        var emptyBrackets = qs.parse('a[]=b', { parseArrays: false });
+        st.deepEqual(emptyBrackets, { a: { 0: 'b' } });
+        st.equal(Array.isArray(emptyBrackets.a), false, 'parseArrays:false, empty brackets case is not an array');
+
+        st.end();
+    });
+
+    t.test('allows for query string prefix', function (st) {
+        st.deepEqual(qs.parse('?foo=bar', { ignoreQueryPrefix: true }), { foo: 'bar' });
+        st.deepEqual(qs.parse('foo=bar', { ignoreQueryPrefix: true }), { foo: 'bar' });
+        st.deepEqual(qs.parse('?foo=bar', { ignoreQueryPrefix: false }), { '?foo': 'bar' });
+        st.end();
+    });
+
+    t.test('parses an object', function (st) {
+        var input = {
+            'user[name]': { 'pop[bob]': 3 },
+            'user[email]': null
+        };
+
+        var expected = {
+            user: {
+                name: { 'pop[bob]': 3 },
+                email: null
+            }
+        };
+
+        var result = qs.parse(input);
+
+        st.deepEqual(result, expected);
+        st.end();
+    });
+
+    t.test('parses string with comma as array divider', function (st) {
+        st.deepEqual(qs.parse('foo=bar,tee', { comma: true }), { foo: ['bar', 'tee'] });
+        st.deepEqual(qs.parse('foo[bar]=coffee,tee', { comma: true }), { foo: { bar: ['coffee', 'tee'] } });
+        st.deepEqual(qs.parse('foo=', { comma: true }), { foo: '' });
+        st.deepEqual(qs.parse('foo', { comma: true }), { foo: '' });
+        st.deepEqual(qs.parse('foo', { comma: true, strictNullHandling: true }), { foo: null });
+        st.end();
+    });
+
+    t.test('parses an object in dot notation', function (st) {
+        var input = {
+            'user.name': { 'pop[bob]': 3 },
+            'user.email.': null
+        };
+
+        var expected = {
+            user: {
+                name: { 'pop[bob]': 3 },
+                email: null
+            }
+        };
+
+        var result = qs.parse(input, { allowDots: true });
+
+        st.deepEqual(result, expected);
+        st.end();
+    });
+
+    t.test('parses an object and not child values', function (st) {
+        var input = {
+            'user[name]': { 'pop[bob]': { test: 3 } },
+            'user[email]': null
+        };
+
+        var expected = {
+            user: {
+                name: { 'pop[bob]': { test: 3 } },
+                email: null
+            }
+        };
+
+        var result = qs.parse(input);
+
+        st.deepEqual(result, expected);
+        st.end();
+    });
+
+    t.test('does not blow up when Buffer global is missing', function (st) {
+        var tempBuffer = global.Buffer;
+        delete global.Buffer;
+        var result = qs.parse('a=b&c=d');
+        global.Buffer = tempBuffer;
+        st.deepEqual(result, { a: 'b', c: 'd' });
+        st.end();
+    });
+
+    t.test('does not crash when parsing circular references', function (st) {
+        var a = {};
+        a.b = a;
+
+        var parsed;
+
+        st.doesNotThrow(function () {
+            parsed = qs.parse({ 'foo[bar]': 'baz', 'foo[baz]': a });
+        });
+
+        st.equal('foo' in parsed, true, 'parsed has "foo" property');
+        st.equal('bar' in parsed.foo, true);
+        st.equal('baz' in parsed.foo, true);
+        st.equal(parsed.foo.bar, 'baz');
+        st.deepEqual(parsed.foo.baz, a);
+        st.end();
+    });
+
+    t.test('does not crash when parsing deep objects', function (st) {
+        var parsed;
+        var str = 'foo';
+
+        for (var i = 0; i < 5000; i++) {
+            str += '[p]';
+        }
+
+        str += '=bar';
+
+        st.doesNotThrow(function () {
+            parsed = qs.parse(str, { depth: 5000 });
+        });
+
+        st.equal('foo' in parsed, true, 'parsed has "foo" property');
+
+        var depth = 0;
+        var ref = parsed.foo;
+        while ((ref = ref.p)) {
+            depth += 1;
+        }
+
+        st.equal(depth, 5000, 'parsed is 5000 properties deep');
+
+        st.end();
+    });
+
+    t.test('parses null objects correctly', { skip: !Object.create }, function (st) {
+        var a = Object.create(null);
+        a.b = 'c';
+
+        st.deepEqual(qs.parse(a), { b: 'c' });
+        var result = qs.parse({ a: a });
+        st.equal('a' in result, true, 'result has "a" property');
+        st.deepEqual(result.a, a);
+        st.end();
+    });
+
+    t.test('parses dates correctly', function (st) {
+        var now = new Date();
+        st.deepEqual(qs.parse({ a: now }), { a: now });
+        st.end();
+    });
+
+    t.test('parses regular expressions correctly', function (st) {
+        var re = /^test$/;
+        st.deepEqual(qs.parse({ a: re }), { a: re });
+        st.end();
+    });
+
+    t.test('does not allow overwriting prototype properties', function (st) {
+        st.deepEqual(qs.parse('a[hasOwnProperty]=b', { allowPrototypes: false }), {});
+        st.deepEqual(qs.parse('hasOwnProperty=b', { allowPrototypes: false }), {});
+
+        st.deepEqual(
+            qs.parse('toString', { allowPrototypes: false }),
+            {},
+            'bare "toString" results in {}'
+        );
+
+        st.end();
+    });
+
+    t.test('can allow overwriting prototype properties', function (st) {
+        st.deepEqual(qs.parse('a[hasOwnProperty]=b', { allowPrototypes: true }), { a: { hasOwnProperty: 'b' } });
+        st.deepEqual(qs.parse('hasOwnProperty=b', { allowPrototypes: true }), { hasOwnProperty: 'b' });
+
+        st.deepEqual(
+            qs.parse('toString', { allowPrototypes: true }),
+            { toString: '' },
+            'bare "toString" results in { toString: "" }'
+        );
+
+        st.end();
+    });
+
+    t.test('params starting with a closing bracket', function (st) {
+        st.deepEqual(qs.parse(']=toString'), { ']': 'toString' });
+        st.deepEqual(qs.parse(']]=toString'), { ']]': 'toString' });
+        st.deepEqual(qs.parse(']hello]=toString'), { ']hello]': 'toString' });
+        st.end();
+    });
+
+    t.test('params starting with a starting bracket', function (st) {
+        st.deepEqual(qs.parse('[=toString'), { '[': 'toString' });
+        st.deepEqual(qs.parse('[[=toString'), { '[[': 'toString' });
+        st.deepEqual(qs.parse('[hello[=toString'), { '[hello[': 'toString' });
+        st.end();
+    });
+
+    t.test('add keys to objects', function (st) {
+        st.deepEqual(
+            qs.parse('a[b]=c&a=d'),
+            { a: { b: 'c', d: true } },
+            'can add keys to objects'
+        );
+
+        st.deepEqual(
+            qs.parse('a[b]=c&a=toString'),
+            { a: { b: 'c' } },
+            'can not overwrite prototype'
+        );
+
+        st.deepEqual(
+            qs.parse('a[b]=c&a=toString', { allowPrototypes: true }),
+            { a: { b: 'c', toString: true } },
+            'can overwrite prototype with allowPrototypes true'
+        );
+
+        st.deepEqual(
+            qs.parse('a[b]=c&a=toString', { plainObjects: true }),
+            { a: { b: 'c', toString: true } },
+            'can overwrite prototype with plainObjects true'
+        );
+
+        st.end();
+    });
+
+    t.test('can return null objects', { skip: !Object.create }, function (st) {
+        var expected = Object.create(null);
+        expected.a = Object.create(null);
+        expected.a.b = 'c';
+        expected.a.hasOwnProperty = 'd';
+        st.deepEqual(qs.parse('a[b]=c&a[hasOwnProperty]=d', { plainObjects: true }), expected);
+        st.deepEqual(qs.parse(null, { plainObjects: true }), Object.create(null));
+        var expectedArray = Object.create(null);
+        expectedArray.a = Object.create(null);
+        expectedArray.a[0] = 'b';
+        expectedArray.a.c = 'd';
+        st.deepEqual(qs.parse('a[]=b&a[c]=d', { plainObjects: true }), expectedArray);
+        st.end();
+    });
+
+    t.test('can parse with custom encoding', function (st) {
+        st.deepEqual(qs.parse('%8c%a7=%91%e5%8d%e3%95%7b', {
+            decoder: function (str) {
+                var reg = /%([0-9A-F]{2})/ig;
+                var result = [];
+                var parts = reg.exec(str);
+                while (parts) {
+                    result.push(parseInt(parts[1], 16));
+                    parts = reg.exec(str);
+                }
+                return String(iconv.decode(SaferBuffer.from(result), 'shift_jis'));
+            }
+        }), { 県: '大阪府' });
+        st.end();
+    });
+
+    t.test('receives the default decoder as a second argument', function (st) {
+        st.plan(1);
+        qs.parse('a', {
+            decoder: function (str, defaultDecoder) {
+                st.equal(defaultDecoder, utils.decode);
+            }
+        });
+        st.end();
+    });
+
+    t.test('throws error with wrong decoder', function (st) {
+        st['throws'](function () {
+            qs.parse({}, { decoder: 'string' });
+        }, new TypeError('Decoder has to be a function.'));
+        st.end();
+    });
+
+    t.test('does not mutate the options argument', function (st) {
+        var options = {};
+        qs.parse('a[b]=true', options);
+        st.deepEqual(options, {});
+        st.end();
+    });
+
+    t.test('throws if an invalid charset is specified', function (st) {
+        st['throws'](function () {
+            qs.parse('a=b', { charset: 'foobar' });
+        }, new TypeError('The charset option must be either utf-8, iso-8859-1, or u
